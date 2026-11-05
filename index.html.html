@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Companion</title>
+<style>
+  :root { --bg:#070b1a; --panel:#0f1630; --line:#1d2a55; --text:#e6ecff; --sub:#8a97c7; --accent:#3d7bff; --accent2:#7fb0ff; }
+  * { box-sizing:border-box; }
+  input, textarea, select { font-size:16px !important; }
+  body { margin:0; color:var(--text); min-height:100vh; min-height:100dvh; padding-bottom:env(safe-area-inset-bottom); -webkit-text-size-adjust:100%; display:flex; flex-direction:column; align-items:center;
+         background:radial-gradient(circle at 50% 10%, #16296a 0%, var(--bg) 62%);
+         font-family:system-ui,-apple-system,"Hiragino Sans","Yu Gothic",sans-serif; }
+  header { width:100%; max-width:760px; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:15px; margin:0; letter-spacing:.12em; color:var(--accent2); }
+  button { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 14px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  main { width:100%; max-width:760px; flex:1; display:flex; flex-direction:column; align-items:center; padding:0 20px 24px; gap:12px; }
+
+  .stage { position:relative; width:min(340px,80vw); aspect-ratio:300/340; cursor:pointer; }
+  .stage::before { content:""; position:absolute; inset:6% 4% 0; border-radius:50%; background:radial-gradient(circle, rgba(61,123,255,.35), transparent 70%); filter:blur(10px); transition:opacity .3s; opacity:.5; }
+  .stage[data-state=speaking]::before { opacity:1; }
+  .stage[data-state=listening]::before { opacity:.8; }
+  svg { position:relative; width:100%; height:100%; overflow:visible; }
+  #head { transform-origin:150px 250px; animation:breathe 4s ease-in-out infinite; }
+  svg[data-state=listening] #head { animation:tilt 3.2s ease-in-out infinite; }
+  svg[data-state=speaking] #head { animation:talkbob .7s ease-in-out infinite; }
+  svg[data-state=thinking] #head { animation:thinkTilt 2.4s ease-in-out infinite; }
+  .eye { transform-box:fill-box; transform-origin:center; animation:blink 5s infinite; }
+  .pupils { transition:transform .4s; }
+  .brows { transition:transform .3s; }
+  svg[data-state=thinking] .pupils { transform:translate(-3px,-4px); }
+  svg[data-state=thinking] .brows { transform:translateY(-5px); }
+  svg[data-state=listening] .brows { transform:translateY(-2px); }
+  @keyframes blink { 0%,93%,100%{transform:scaleY(1)} 96%{transform:scaleY(.08)} }
+  @keyframes breathe { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+  @keyframes tilt { 0%,100%{transform:rotate(-1.5deg)} 50%{transform:rotate(2deg)} }
+  @keyframes talkbob { 0%,100%{transform:translateY(0) rotate(0)} 25%{transform:translateY(-2px) rotate(-.8deg)} 75%{transform:translateY(-1px) rotate(.8deg)} }
+  @keyframes thinkTilt { 0%,100%{transform:rotate(3deg)} 50%{transform:rotate(5deg)} }
+
+  .caption { min-height:56px; max-width:560px; text-align:center; font-size:17px; line-height:1.6; padding:6px 10px; }
+  .status { color:var(--sub); font-size:13px; min-height:18px; text-align:center; }
+  .controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  .main-btn { background:var(--accent); border:none; padding:12px 26px; border-radius:30px; font-size:16px; }
+  .main-btn.on { background:#e0425a; }
+  form.textrow { width:100%; display:flex; gap:8px; max-width:560px; }
+  form.textrow input { flex:1; }
+  details { width:100%; max-width:560px; color:var(--sub); font-size:13px; }
+  .log { max-height:30vh; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+  .msg { padding:8px 12px; border-radius:12px; max-width:88%; line-height:1.55; font-size:14px; white-space:pre-wrap; color:var(--text); }
+  .msg.user { align-self:flex-end; background:#16306e; }
+  .msg.ai { align-self:flex-start; background:var(--panel); border:1px solid var(--line); }
+  input[type=text], input[type=password], input:not([type]), textarea, select { background:#0a1128; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:9px 12px; font:inherit; width:100%; }
+  dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:16px; width:min(600px,94vw); max-height:90vh; overflow-y:auto; padding:20px; }
+  dialog::backdrop { background:rgba(0,0,0,.65); }
+  dialog h3 { margin:18px 0 4px; font-size:14px; color:var(--accent2); border-bottom:1px solid var(--line); padding-bottom:4px; }
+  dialog label { display:block; margin:10px 0 4px; font-size:12px; color:var(--sub); }
+  dialog label.chk { display:flex; gap:8px; align-items:center; color:var(--text); font-size:14px; margin-top:12px; }
+  dialog label.chk input { width:auto; }
+  dialog .hint { font-size:12px; color:var(--sub); margin-top:4px; line-height:1.5; }
+  dialog .row { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; flex-wrap:wrap; }
+  textarea { min-height:140px; resize:vertical; }
+  textarea.short { min-height:70px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">VOICE COMPANION</h1>
+  <button id="openSettings">設定</button>
+</header>
+<main>
+  <div class="stage" id="stage" data-state="off" title="タップでAIの発話を止める">
+    <svg id="avatar" viewBox="0 0 300 340" data-state="off" xmlns="http://www.w3.org/2000/svg">
+      <!-- 体(スーツ) -->
+      <path d="M20 340 C20 275 75 252 150 252 C225 252 280 275 280 340 Z" fill="#1c2742"/>
+      <path d="M118 252 L150 310 L100 340 L60 340 C60 295 85 262 118 252 Z" fill="#16203a"/>
+      <path d="M182 252 L150 310 L200 340 L240 340 C240 295 215 262 182 252 Z" fill="#16203a"/>
+      <polygon points="124,252 176,252 150,306" fill="#f3f6fb"/>
+      <polygon points="143,272 157,272 161,322 150,332 139,322" fill="#2f7fd6"/>
+      <polygon points="145,262 155,262 157,274 143,274" fill="#2a6cbb"/>
+      <!-- 首 -->
+      <rect x="130" y="210" width="40" height="50" rx="12" fill="#e8b994"/>
+      <path d="M130 238 Q150 252 170 238 L170 252 L130 252 Z" fill="#d9a27c"/>
+      <g id="head">
+        <!-- 耳 -->
+        <ellipse cx="92" cy="172" rx="9" ry="14" fill="#efc3a0"/>
+        <ellipse cx="208" cy="172" rx="9" ry="14" fill="#efc3a0"/>
+        <!-- 顔 -->
+        <path d="M92 150 C92 105 118 88 150 88 C182 88 208 105 208 150 L208 178 C208 214 182 236 150 236 C118 236 92 214 92 178 Z" fill="#f4cfae"/>
+        <!-- 髪 -->
+        <path d="M86 160 C72 100 108 62 152 62 C196 62 232 98 214 160 C210 138 204 124 196 116 C176 120 150 108 128 104 C112 112 98 134 86 160 Z" fill="#2b2433"/>
+        <path d="M128 104 C140 92 160 90 176 98 C160 100 146 104 128 104 Z" fill="#3a3144"/>
+        <!-- 頬 -->
+        <ellipse cx="112" cy="198" rx="12" ry="7" fill="#f2a99b" opacity=".35"/>
+        <ellipse cx="188" cy="198" rx="12" ry="7" fill="#f2a99b" opacity=".35"/>
+        <!-- 眉 -->
+        <g class="brows" fill="none" stroke="#2b2433" stroke-width="4" stroke-linecap="round">
+          <path d="M108 148 Q123 141 137 147"/>
+          <path d="M163 147 Q177 141 192 148"/>
+        </g>
+        <!-- 目 -->
+        <g class="eye"><ellipse cx="123" cy="168" rx="12" ry="9" fill="#fff"/></g>
+        <g class="eye"><ellipse cx="177" cy="168" rx="12" ry="9" fill="#fff"/></g>
+        <g class="pupils">
+          <circle cx="123" cy="169" r="6" fill="#2b2433"/><circle cx="121" cy="166" r="1.8" fill="#fff"/>
+          <circle cx="177" cy="169" r="6" fill="#2b2433"/><circle cx="175" cy="166" r="1.8" fill="#fff"/>
+        </g>
+        <!-- 鼻 -->
+        <path d="M150 176 Q145 192 150 196 Q154 197 156 195" fill="none" stroke="#d9a27c" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- 口 -->
+        <path id="smile" d="M134 211 Q150 221 166 211" fill="none" stroke="#8c3c46" stroke-width="3.5" stroke-linecap="round"/>
+        <ellipse id="mouth" cx="150" cy="213" rx="12" ry="1" fill="#7a2e3a" opacity="0"/>
+      </g>
+    </svg>
+  </div>
+  <div class="status" id="status">「開始」を押すと会話が始まります</div>
+  <div class="caption" id="caption"></div>
+  <div class="controls">
+    <button class="main-btn" id="startBtn">開始</button>
+  </div>
+  <form class="textrow" id="textForm">
+    <input id="textInput" placeholder="文字で話しかけることもできます" autocomplete="off">
+    <button type="submit">送信</button>
+  </form>
+  <details>
+    <summary>会話ログ</summary>
+    <div class="log" id="log"></div>
+  </details>
+</main>
+
+<audio id="player" crossorigin="anonymous" style="display:none"></audio>
+
+<dialog id="settings">
+  <h2 style="margin:0">設定</h2>
+
+  <h3>頭脳(Claude)</h3>
+  <label>Anthropic APIキー(このブラウザ内にだけ保存)</label>
+  <input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+  <label>モデル名</label>
+  <input id="model" placeholder="claude-sonnet-5-5">
+  <label class="chk"><input type="checkbox" id="webSearch"> Web検索を使う(最新情報・ニュースに強くなる)</label>
+  <div class="hint">Anthropicのコンソールでウェブ検索が有効になっている必要があります。使えない場合はオフにしてください。</div>
+
+  <h3>キャラクター</h3>
+  <label>名前</label>
+  <input id="aiName" placeholder="ソウ">
+  <label>性格・話し方</label>
+  <textarea id="persona"></textarea>
+  <label>あなたについて(AIが話題を選ぶ材料。仕事・趣味・興味など)</label>
+  <textarea id="userInfo" class="short" placeholder="例: ソフトウェア開発者。AI、宇宙、料理、ジャズが好き。"></textarea>
+
+  <h3>声</h3>
+  <label>音声エンジン</label>
+  <select id="engine">
+    <option value="browser">ブラウザ内蔵(無料・簡易)</option>
+    <option value="voicevox">VOICEVOX(無料・ローカル・抑揚あり)</option>
+    <option value="elevenlabs">ElevenLabs(有料・最も人間らしい)</option>
+  </select>
+  <div id="engBrowser">
+    <label>声</label><select id="voice"></select>
+  </div>
+  <div id="engVoicevox" style="display:none">
+    <label>VOICEVOXのURL</label><input id="vvUrl" placeholder="http://localhost:50021">
+    <label>話者ID(VOICEVOXの画面で確認できる数字)</label><input id="vvSpeaker" placeholder="3">
+    <div class="hint">VOICEVOXを起動しておく必要があります。このHTMLは <b>python -m http.server</b> などで localhost から開くと接続エラーになりにくいです。</div>
+  </div>
+  <div id="engEleven" style="display:none">
+    <label>ElevenLabs APIキー</label><input id="elKey" type="password" autocomplete="off">
+    <label>Voice ID(ElevenLabsのVoice Libraryで選んだ声のID)</label><input id="elVoice">
+    <label>モデル</label><input id="elModel" placeholder="eleven_multilingual_v2">
+  </div>
+  <label>話す速さ: <span id="rateVal">1.0</span></label>
+  <input type="range" id="rate" min="0.7" max="1.5" step="0.05" value="1.0">
+
+  <h3>会話の挙動</h3>
+  <label>AIから話しかける間隔(あなたが黙っている時間)</label>
+  <select id="proactive">
+    <option value="0">話しかけない</option>
+    <option value="1">1分</option>
+    <option value="3">3分</option>
+    <option value="5">5分</option>
+    <option value="10">10分</option>
+    <option value="30">30分</option>
+  </select>
+  <label class="chk"><input type="checkbox" id="greeting"> 開始時にAIから挨拶する</label>
+  <label class="chk"><input type="checkbox" id="barge"> AIの発話中も聞き取る(イヤホン使用時のみ。割り込みで話を遮れる)</label>
+
+  <div class="row">
+    <button id="testVoice">声を試す</button>
+    <button id="clearHistory">会話をリセット</button>
+    <button id="saveSettings" style="background:var(--accent);border:none">保存</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  const DEFAULT_PERSONA =
+`あなたはユーザー専属の音声パートナー「{name}」です。
+・知的好奇心が強く、科学・歴史・テクノロジー・時事・文化など幅広い知識を持つ博識な相棒。
+・落ち着いた親しみやすい口調で、友達のように話す。ときどき軽い皮肉や冗談を言う。
+・声で会話しているので、1回の発話は2〜4文の自然な話し言葉にする。Markdown、箇条書き、絵文字、括弧書きは使わない。
+・「えっと」「なるほど」「ああ、それね」など相づちや間を自然に混ぜてよい(多用しない)。
+・英字略語や数式は、読み上げやすい日本語にする。
+・不確かなことは断定せず、知らないことは知らないと言う。
+・自分から話題を振るときは、前の会話と被らない、ユーザーが面白がりそうな話にする。`;
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+  const defaults = {
+    apiKey:'', model:'claude-sonnet-5-5', webSearch:false, aiName:'ソウ', persona:DEFAULT_PERSONA, userInfo:'',
+    engine:'browser', voice:'', rate:1.0, vvUrl:'http://localhost:50021', vvSpeaker:'3',
+    elKey:'', elVoice:'', elModel:'eleven_multilingual_v2', proactive:'3', greeting:true, barge:false
+  };
+  let cfg = { ...defaults };
+  try { Object.assign(cfg, JSON.parse(store.get('cfg', '{}'))); } catch {}
+
+  // ---------- 状態 ----------
+  let state = 'off';           // off | listening | thinking | speaking
+  let session = false;
+  let history = [];
+  let current = null;          // 進行中のLLM応答
+  let gen = 0;                 // 再生世代(割り込み時に増やして古い再生を無効化)
+  let queue = [];              // 再生待ち
+  let playing = false;
+  let streamDone = true;
+  let lastActivity = Date.now();
+  let fakeTalk = false;
+  let audioPlaying = false;
+
+  const stageEl = $('stage'), svgEl = $('avatar'), statusEl = $('status'), capEl = $('caption'), logEl = $('log'), startBtn = $('startBtn');
+
+  const labels = { off:'「開始」を押すと会話が始まります', listening:'聞いています。話しかけてください', thinking:'考え中…', speaking:'' };
+  function setState(s, text) {
+    state = s;
+    stageEl.dataset.state = s; svgEl.dataset.state = s;
+    statusEl.textContent = text || labels[s] || '';
+    startBtn.textContent = session ? '終了' : '開始';
+    startBtn.classList.toggle('on', session);
+  }
+  function addMsg(role, text) {
+    const d = document.createElement('div'); d.className = 'msg ' + role; d.textContent = text;
+    logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; return d;
+  }
+
+  // ---------- アバターの口パク ----------
+  let audioCtx = null, analyser = null, abuf = null;
+  const mouthEl = $('mouth'), smileEl = $('smile');
+  let mouth = 0;
+  function frame(t) {
+    let target = 0;
+    if (audioPlaying && analyser) {
+      analyser.getByteTimeDomainData(abuf);
+      let s = 0; for (let i = 0; i < abuf.length; i++) { const d = (abuf[i] - 128) / 128; s += d * d; }
+      target = Math.min(1, Math.sqrt(s / abuf.length) * 6);
+    } else if (fakeTalk) {
+      target = 0.25 + 0.55 * Math.abs(Math.sin(t / 105)) * (0.6 + 0.4 * Math.sin(t / 370));
+    }
+    mouth += (target - mouth) * 0.4;
+    const o = mouth;
+    mouthEl.setAttribute('ry', (1 + o * 12).toFixed(2));
+    mouthEl.setAttribute('rx', (12 - o * 3).toFixed(2));
+    mouthEl.setAttribute('cy', (212 + o * 5).toFixed(2));
+    mouthEl.setAttribute('opacity', o < 0.07 ? 0 : 1);
+    smileEl.setAttribute('opacity', o < 0.07 ? 1 : 0);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let wakeLock = null;
+  async function keepAwake(on) {
+    try {
+      if (on && 'wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+      else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+    } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && session) keepAwake(true); });
+  // iPad/Safari はユーザー操作の中で一度音を出さないと、後から自動再生できない
+  function unlockAudio() {
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {}
+    try {
+      const pl = $('player');
+      pl.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+      pl.play().catch(() => {});
+    } catch {}
+  }
+  function initAudio() {
+    if (IOS) return;   // iPadOSでは口パク解析を使わず、疑似口パクにする(音が出なくなる事故を避ける)
+    if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaElementSource($('player'));
+      analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
+      abuf = new Uint8Array(analyser.fftSize);
+      src.connect(analyser); analyser.connect(audioCtx.destination);
+    } catch { audioCtx = null; analyser = null; }
+  }
+
+  // ---------- 音声合成 ----------
+  let jaVoices = [];
+  function loadVoices() {
+    jaVoices = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith('ja'));
+    const sel = $('voice'); sel.innerHTML = '';
+    jaVoices.forEach(v => { const o = document.createElement('option'); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.appendChild(o); });
+    if (cfg.voice && jaVoices.some(v => v.name === cfg.voice)) sel.value = cfg.voice;
+  }
+  speechSynthesis.onvoiceschanged = loadVoices; loadVoices();
+
+  const clean = t => t.replace(/[*#`_>~「」『』]/g, '').replace(/\s+/g, ' ').trim();
+
+  async function synth(text) {
+    if (cfg.engine === 'voicevox') {
+      const base = cfg.vvUrl.replace(/\/$/, ''), sp = encodeURIComponent(cfg.vvSpeaker);
+      const q1 = await fetch(`${base}/audio_query?text=${encodeURIComponent(text)}&speaker=${sp}`, { method: 'POST' });
+      if (!q1.ok) throw new Error('VOICEVOX audio_query ' + q1.status);
+      const q = await q1.json();
+      q.speedScale = cfg.rate; q.intonationScale = 1.25; q.prePhonemeLength = 0.05; q.postPhonemeLength = 0.1;
+      const r = await fetch(`${base}/synthesis?speaker=${sp}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(q) });
+      if (!r.ok) throw new Error('VOICEVOX synthesis ' + r.status);
+      return { kind: 'blob', url: URL.createObjectURL(await r.blob()) };
+    }
+    if (cfg.engine === 'elevenlabs') {
+      const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(cfg.elVoice)}?output_format=mp3_44100_128`, {
+        method: 'POST',
+        headers: { 'xi-api-key': cfg.elKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ text, model_id: cfg.elModel || 'eleven_multilingual_v2',
+          voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.3, speed: cfg.rate } })
+      });
+      if (!r.ok) throw new Error('ElevenLabs ' + r.status + ' ' + (await r.text()).slice(0, 120));
+      return { kind: 'blob', url: URL.createObjectURL(await r.blob()) };
+    }
+    return { kind: 'tts', text };
+  }
+
+  function enqueue(text) {
+    text = clean(text); if (!text) return;
+    const item = { g: gen, text, p: synth(text).catch(e => ({ kind: 'err', err: e })) };
+    queue.push(item); pump();
+  }
+
+  async function pump() {
+    if (playing) return;
+    const item = queue.shift();
+    if (!item) { maybeDone(); return; }
+    playing = true;
+    const res = await item.p;
+    if (item.g !== gen) { playing = false; return pump(); }
+    if (res.kind === 'err') {
+      statusEl.textContent = '音声合成エラー: ' + res.err.message;
+      res.kind = 'tts'; res.text = item.text;   // ブラウザ音声で代替
+    }
+    if (state !== 'speaking') { setState('speaking'); }
+    capEl.textContent = item.text;
+    ensureRec();
+    await playItem(res, item.g);
+    playing = false;
+    pump();
+  }
+
+  function playItem(res, g) {
+    return new Promise(resolve => {
+      if (res.kind === 'blob') {
+        const pl = $('player');
+        initAudio();
+        pl.src = res.url;
+        const end = () => { audioPlaying = false; pl.onended = pl.onerror = null; URL.revokeObjectURL(res.url); resolve(); };
+        pl.onended = end; pl.onerror = end;
+        audioPlaying = true;
+        if (!analyser) fakeTalk = true;
+        const end2 = end;
+        pl.onended = pl.onerror = () => { fakeTalk = false; end2(); };
+        pl.play().catch(() => { fakeTalk = false; end2(); });
+      } else {
+        const u = new SpeechSynthesisUtterance(res.text);
+        u.lang = 'ja-JP';
+        const v = jaVoices.find(v => v.name === cfg.voice) || jaVoices[0];
+        if (v) u.voice = v;
+        u.rate = cfg.rate;
+        const end = () => { fakeTalk = false; resolve(); };
+        u.onend = end; u.onerror = end;
+        fakeTalk = true;
+        speechSynthesis.speak(u);
+      }
+    });
+  }
+
+  function maybeDone() {
+    if (!streamDone || playing || queue.length) return;
+    lastActivity = Date.now();
+    if (session) { setState('listening'); ensureRec(); }
+    else setState('off');
+  }
+
+  function stopSpeech() {
+    gen++; queue = []; playing = false; fakeTalk = false; audioPlaying = false;
+    speechSynthesis.cancel();
+    const pl = $('player'); try { pl.pause(); pl.removeAttribute('src'); pl.load(); } catch {}
+  }
+
+  // ---------- 音声認識 ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, recRunning = false, finalText = '', heardNow = false;
+
+  function recWanted() {
+    return session && SR && (state === 'listening' || (state === 'speaking' && cfg.barge));
+  }
+  function ensureRec() {
+    if (!recWanted() || recRunning) return;
+    finalText = ''; heardNow = false;
+    rec = new SR();
+    rec.lang = 'ja-JP'; rec.interimResults = true; rec.continuous = false;
+    rec.onresult = e => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+      }
+      heardNow = true; lastActivity = Date.now();
+      if (state === 'speaking' && cfg.barge && (interim || finalText)) { interruptAll(); setState('listening'); }
+      if (state === 'listening' && interim) statusEl.textContent = '聞いています… ' + interim;
+    };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        endSession('マイクの許可が必要です。アドレスバーの設定から許可してください');
+      }
+    };
+    rec.onend = () => {
+      recRunning = false; heardNow = false;
+      const t = finalText.trim(); finalText = '';
+      if (t && session) { onUserUtterance(t); return; }
+      if (recWanted()) setTimeout(ensureRec, 250);
+    };
+    try { rec.start(); recRunning = true; } catch { recRunning = false; }
+  }
+  function abortRec() { try { rec && rec.abort(); } catch {} recRunning = false; }
+
+  // ---------- LLM ----------
+  function sanitize(msgs) {
+    const out = [];
+    for (const m of msgs) {
+      if (out.length && out[out.length - 1].role === m.role) out[out.length - 1] = { role: m.role, content: out[out.length - 1].content + '\n' + m.content };
+      else out.push({ ...m });
+    }
+    while (out.length && out[0].role !== 'user') out.shift();
+    return out;
+  }
+
+  function buildSystem() {
+    let s = cfg.persona.replaceAll('{name}', cfg.aiName);
+    if (cfg.userInfo.trim()) s += `\n\n【ユーザーについて】\n${cfg.userInfo.trim()}`;
+    s += `\n\n【現在日時】${new Date().toLocaleString('ja-JP', { dateStyle: 'full', timeStyle: 'short' })}`;
+    return s;
+  }
+
+  function interruptAll() {
+    if (current && current.active) {
+      current.active = false;
+      if (current.full.trim()) history.push({ role: 'assistant', content: current.full });
+      else if (current.pushedUser) history.pop();
+      current.ctrl.abort();
+    }
+    stopSpeech(); streamDone = true;
+  }
+
+  async function onUserUtterance(text) {
+    interruptAll(); abortRec();
+    await send(text, false);
+  }
+
+  async function send(text, hidden) {
+    if (!cfg.apiKey) { setState(session ? 'listening' : 'off', 'APIキーを設定してください'); $('settings').showModal(); return; }
+    abortRec();
+    if (!hidden) addMsg('user', text);
+    history.push({ role: 'user', content: text });
+    if (history.length > 30) history = history.slice(-30);
+
+    setState('thinking'); streamDone = false; capEl.textContent = '';
+    stopSpeech(); streamDone = false;
+    const my = { active: true, full: '', ctrl: new AbortController(), pushedUser: true };
+    current = my;
+    const aiDiv = addMsg('ai', '');
+    let buf = '', chunk = '';
+
+    const flush = final => {
+      let m;
+      while ((m = buf.match(/^([\s\S]*?[。！？!?\n])/))) { chunk += m[1]; buf = buf.slice(m[1].length); if (chunk.length >= 14) { enqueue(chunk); chunk = ''; } }
+      if (final) { chunk += buf; buf = ''; if (chunk.trim()) enqueue(chunk); chunk = ''; }
+    };
+
+    try {
+      const body = { model: cfg.model, max_tokens: 600, stream: true, system: buildSystem(), messages: sanitize(history) };
+      if (cfg.webSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', signal: my.ctrl.signal,
+        headers: { 'content-type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error(res.status + ' ' + (await res.text()).slice(0, 200));
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let sse = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        sse += dec.decode(value, { stream: true });
+        const lines = sse.split('\n'); sse = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim(); if (!data) continue;
+          let j; try { j = JSON.parse(data); } catch { continue; }
+          if (j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') {
+            my.full += j.delta.text; buf += j.delta.text;
+            aiDiv.textContent = my.full; logEl.scrollTop = logEl.scrollHeight;
+            flush(false);
+          }
+        }
+      }
+      if (!my.active) return;
+      flush(true);
+      my.active = false;
+      history.push({ role: 'assistant', content: my.full });
+      streamDone = true;
+      maybeDone();
+    } catch (e) {
+      if (e.name === 'AbortError' || !my.active) return;
+      my.active = false; streamDone = true;
+      aiDiv.textContent = 'エラー: ' + e.message;
+      history.pop();
+      stopSpeech();
+      setState(session ? 'listening' : 'off', 'エラーが発生しました(設定を確認してください)');
+      ensureRec();
+    }
+  }
+
+  // AIから話しかける
+  function proactive(kind) {
+    if (!session || (state !== 'listening')) return;
+    lastActivity = Date.now();
+    const web = cfg.webSearch ? '必要ならWeb検索で最新の話題を調べてもよい。' : '';
+    const text = kind === 'greet'
+      ? `(システムからの指示: 会話を開始した。時間帯に合った短い挨拶をして、軽い一言や話題を添えて自分から話しかけてください。${web})`
+      : `(システムからの指示: ユーザーはしばらく黙っている。自然に自分から話しかけてください。ユーザーの興味に合う豆知識・ニュース・素朴な疑問・軽い雑談から、これまでの会話と被らない話題を1つ、2〜3文で。${web})`;
+    abortRec(); send(text, true);
+  }
+  setInterval(() => {
+    const min = parseInt(cfg.proactive, 10);
+    if (!session || !min || state !== 'listening' || heardNow) return;
+    if (Date.now() - lastActivity > min * 60000) proactive('idle');
+  }, 3000);
+
+  // ---------- セッション ----------
+  function startSession() {
+    if (!SR) { statusEl.textContent = 'このブラウザは音声認識に未対応です。Chrome か Edge で開いてください。'; }
+    if (!cfg.apiKey) { $('settings').showModal(); return; }
+    session = true; unlockAudio(); initAudio(); keepAwake(true); lastActivity = Date.now();
+    setState('listening'); ensureRec();
+    if (cfg.greeting) setTimeout(() => proactive('greet'), 300);
+  }
+  function endSession(msg) {
+    session = false; interruptAll(); abortRec(); keepAwake(false);
+    setState('off', msg); capEl.textContent = '';
+  }
+  startBtn.onclick = () => session ? endSession() : startSession();
+  stageEl.onclick = () => { if (session && (state === 'speaking' || state === 'thinking')) { interruptAll(); setState('listening'); ensureRec(); } };
+  $('textForm').onsubmit = e => {
+    e.preventDefault();
+    const t = $('textInput').value.trim(); if (!t) return;
+    $('textInput').value = '';
+    unlockAudio(); initAudio();
+    interruptAll(); abortRec(); send(t, false);
+  };
+
+  // ---------- 設定UI ----------
+  const fields = ['apiKey','model','aiName','persona','userInfo','engine','vvUrl','vvSpeaker','elKey','elVoice','elModel','proactive'];
+  const checks = ['webSearch','greeting','barge'];
+  function showEngine() {
+    const e = $('engine').value;
+    $('engBrowser').style.display = e === 'browser' ? '' : 'none';
+    $('engVoicevox').style.display = e === 'voicevox' ? '' : 'none';
+    $('engEleven').style.display = e === 'elevenlabs' ? '' : 'none';
+  }
+  $('engine').onchange = showEngine;
+  $('rate').oninput = () => $('rateVal').textContent = $('rate').value;
+
+  function fillSettings() {
+    fields.forEach(k => $(k).value = cfg[k]);
+    checks.forEach(k => $(k).checked = !!cfg[k]);
+    $('rate').value = cfg.rate; $('rateVal').textContent = cfg.rate;
+    loadVoices(); showEngine();
+  }
+  function applyTitle() { $('title').textContent = cfg.aiName.toUpperCase(); document.title = cfg.aiName; }
+  $('openSettings').onclick = () => { fillSettings(); $('settings').showModal(); };
+
+  $('saveSettings').onclick = e => {
+    e.preventDefault();
+    fields.forEach(k => cfg[k] = $(k).value.trim ? (k === 'persona' || k === 'userInfo' ? $(k).value : $(k).value.trim()) : $(k).value);
+    checks.forEach(k => cfg[k] = $(k).checked);
+    cfg.rate = parseFloat($('rate').value); cfg.voice = $('voice').value || cfg.voice;
+    if (!cfg.persona.trim()) cfg.persona = DEFAULT_PERSONA;
+    if (!cfg.aiName) cfg.aiName = 'ソウ';
+    store.set('cfg', JSON.stringify(cfg));
+    applyTitle(); $('settings').close();
+  };
+  $('testVoice').onclick = async e => {
+    e.preventDefault();
+    const keep = { ...cfg };
+    cfg.engine = $('engine').value; cfg.voice = $('voice').value; cfg.rate = parseFloat($('rate').value);
+    cfg.vvUrl = $('vvUrl').value.trim(); cfg.vvSpeaker = $('vvSpeaker').value.trim();
+    cfg.elKey = $('elKey').value.trim(); cfg.elVoice = $('elVoice').value.trim(); cfg.elModel = $('elModel').value.trim();
+    initAudio(); stopSpeech();
+    const res = await synth('こんにちは。声のテストです。ちゃんと聞こえていますか?').catch(err => ({ kind: 'err', err }));
+    if (res.kind === 'err') alert('音声エラー: ' + res.err.message); else await playItem(res, gen);
+    cfg = keep;
+  };
+  $('clearHistory').onclick = e => { e.preventDefault(); history = []; logEl.innerHTML = ''; capEl.textContent = ''; };
+
+  applyTitle();
+  if (!cfg.apiKey) setTimeout(() => { fillSettings(); $('settings').showModal(); }, 300);
+})();
+</script>
+</body>
+</html>
